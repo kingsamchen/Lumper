@@ -16,6 +16,10 @@ cgroup_manager::cgroup_manager(std::string name, const resource_config& cfg)
         subsystems_.push_back(std::make_unique<memory_subsystem>(name_, cfg.memory_limit()));
     }
 
+    if (cfg.cpus() > 0) {
+        subsystems_.push_back(std::make_unique<cpu_subsystem>(name_, cfg.cpus()));
+    }
+
     SPDLOG_INFO("Enabled cgroup subsystems count={}", subsystems_.size());
 }
 

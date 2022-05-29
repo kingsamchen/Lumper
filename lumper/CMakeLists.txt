@@ -16,6 +16,7 @@ target_sources(lumper
     cli.h
     cgroups/cgroup_manager.cpp
     cgroups/cgroup_manager.h
+    cgroups/cpu_subsystem.cpp
     cgroups/memory_subsystem.cpp
     cgroups/subsystems.h
     cgroups/util.cpp

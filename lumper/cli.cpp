@@ -47,6 +47,9 @@ void cli::parse(int argc, const char* argv[]) {
             .implicit_value(true);
     parser_run.add_argument("-m", "--memory")
             .help("enable memory limit");
+    parser_run.add_argument("--cpus")
+            .scan<'i', int>()
+            .help("enable cpu limit");
     parser_run.add_argument("CMD")
             .help("executable and its arguments (optional)")
             .remaining();

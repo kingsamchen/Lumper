@@ -18,29 +18,31 @@
 namespace lumper::cgroups {
 namespace {
 
-constexpr char limit_filename[] = "memory.limit_in_bytes";
+constexpr char period_filename[] = "cpu.cfs_period_us";
+constexpr char quota_filename[] = "cpu.cfs_quota_us";
 constexpr char task_filename[] = "tasks";
 
 } // namespace
 
-memory_subsystem::memory_subsystem(std::string_view cgroup_name, std::string_view memory_limit) {
+cpu_subsystem::cpu_subsystem(std::string_view cgroup_name, int cpus) {
     assert(!cgroup_name.empty());
-    assert(!memory_limit.empty());
-    cgroup_path_ = get_cgroup_path_for_subsystem(memory_subsystem::name, cgroup_name, true);
-    auto limit_path = cgroup_path_ / limit_filename;
-    base::write_to_file(limit_path, memory_limit);
+    assert(cpus > 0);
+    cgroup_path_ = get_cgroup_path_for_subsystem(cpu_subsystem::name, cgroup_name, true);
+    auto period_path = cgroup_path_ / period_filename;
+    auto period = base::read_file_to_string(period_path);
+    auto quota_path = cgroup_path_ / quota_filename;
+    base::write_to_file(quota_path, fmt::to_string(cpus * std::stoi(period)));
 }
 
-memory_subsystem::~memory_subsystem() {
-    // See https://lists.linuxfoundation.org/pipermail/containers/2009-March/016518.html
+cpu_subsystem::~cpu_subsystem() {
     auto rc = ::rmdir(cgroup_path_.c_str());
     if (rc != 0 && errno != ENOENT) {
-        SPDLOG_ERROR("Failed to cleanup cgroup memory subsystem; errno={} path={}",
+        SPDLOG_ERROR("Failed to cleanup cgroup cpu subsystem; errno={} path={}",
                      errno, cgroup_path_.native());
     }
 }
 
-void memory_subsystem::apply(int pid) {
+void cpu_subsystem::apply(int pid) {
     auto task_path = cgroup_path_ / task_filename;
     base::write_to_file(task_path, fmt::to_string(pid));
 }

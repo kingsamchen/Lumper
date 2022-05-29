@@ -57,6 +57,11 @@ void process(cli::cmd_run_t) {
         res_cfg.set_memory_limit(*mem_limit);
     }
 
+    auto cpus_limit = parser.present<int>("--cpus");
+    if (cpus_limit) {
+        res_cfg.set_cpus(*cpus_limit);
+    }
+
     auto argv = parser.present<std::vector<std::string>>("CMD");
     if (!argv || argv->empty()) {
         throw cli_parse_failure("No CMD provided", &parser);

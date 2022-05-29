@@ -23,13 +23,8 @@ public:
         return *this;
     }
 
-    resource_config& set_cpus(std::string_view cpus) {
+    resource_config& set_cpus(int cpus) {
         cpus_ = cpus;
-        return *this;
-    }
-
-    resource_config& set_cpu_set(const std::string& cpu_set) {
-        cpu_set_ = cpu_set;
         return *this;
     }
 
@@ -37,18 +32,13 @@ public:
         return memory_limit_;
     }
 
-    const std::string& cpus() const noexcept {
+    int cpus() const noexcept {
         return cpus_;
-    }
-
-    const std::string& cpu_set() const noexcept {
-        return cpu_set_;
     }
 
 private:
     std::string memory_limit_;
-    std::string cpus_;
-    std::string cpu_set_;
+    int cpus_{-1};
 };
 
 class cgroup_manager {

@@ -45,6 +45,32 @@ private:
     static constexpr char name[] = "memory";
 };
 
+class cpu_subsystem : public subsystem {
+public:
+    // Caller must guarantee that `cgroup_name` and `memory_limit` both are not empty.
+    // Throws
+    //  - `std::filesystem::filesystem_error` for filesystem related errors.
+    //  - `std::runtime_error` if mount point of `subsystem` cannot be found.
+    cpu_subsystem(std::string_view cgroup_name, int cpus);
+
+    ~cpu_subsystem() override;
+
+    cpu_subsystem(const cpu_subsystem&) = delete;
+
+    cpu_subsystem(cpu_subsystem&&) = delete;
+
+    cpu_subsystem& operator=(const cpu_subsystem&) = delete;
+
+    cpu_subsystem& operator=(cpu_subsystem&&) = delete;
+
+    // Throws `std::filesystem::filesystem_error` when failed.
+    void apply(int pid) override;
+
+private:
+    std::filesystem::path cgroup_path_;
+    static constexpr char name[] = "cpu";
+};
+
 } // namespace lumper::cgroups
 
 #endif // LUMPER_CGROUPS_SUBSYSTEMS_H_
