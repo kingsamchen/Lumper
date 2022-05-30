@@ -33,15 +33,29 @@ TEST_CASE("throws when writing file failed") {
     constexpr char data[] = "This is a test text";
 
     SUBCASE("failure when (parent) path doesn't exist") {
-        CHECK_THROWS_AS( // NOLINT(readability-else-after-return)
-                base::write_to_file("/tmp/no/such/dir/exist", data),
-                std::filesystem::filesystem_error);
+        CHECK_THROWS_AS(base::write_to_file("/tmp/no/such/dir/exist", data),
+                        std::filesystem::filesystem_error);
     }
 
     SUBCASE("faialure when no permission to write") {
-        CHECK_THROWS_AS( // NOLINT(readability-else-after-return)
-                base::write_to_file("/var/log/test_write_file.txt", data),
-                std::filesystem::filesystem_error);
+        CHECK_THROWS_AS(base::write_to_file("/var/log/test_write_file.txt", data),
+                        std::filesystem::filesystem_error);
+    }
+}
+
+TEST_CASE("read from file") {
+    auto ts = std::chrono::system_clock::now().time_since_epoch().count();
+    auto filename = fmt::format("/tmp/test_write_file_{}.txt", ts);
+    constexpr char data[] = "This is a test text";
+    base::write_to_file(filename, data);
+    auto file_data = base::read_file_to_string(filename);
+    CHECK_EQ(file_data, data);
+}
+
+TEST_CASE("throws when reading file failed") {
+    SUBCASE("parent path doesn't exist") {
+        CHECK_THROWS_AS(base::read_file_to_string("/tmp/no/such/dir/exist.txt"),
+                        std::filesystem::filesystem_error);
     }
 }
 
