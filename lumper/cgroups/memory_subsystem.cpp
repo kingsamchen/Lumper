@@ -8,6 +8,7 @@
 
 #include <unistd.h>
 
+#include "esl/scope_guard.h"
 #include "fmt/format.h"
 #include "fmt/os.h"
 #include "spdlog/spdlog.h"
@@ -27,22 +28,30 @@ memory_subsystem::memory_subsystem(std::string_view cgroup_name, std::string_vie
     assert(!cgroup_name.empty());
     assert(!memory_limit.empty());
     cgroup_path_ = get_cgroup_path_for_subsystem(memory_subsystem::name, cgroup_name, true);
+    ESL_ON_SCOPE_FAIL {
+        remove();
+    };
+
     auto limit_path = cgroup_path_ / limit_filename;
     base::write_to_file(limit_path, memory_limit);
 }
 
 memory_subsystem::~memory_subsystem() {
+    remove();
+}
+
+void memory_subsystem::apply(int pid) {
+    auto task_path = cgroup_path_ / task_filename;
+    base::write_to_file(task_path, fmt::to_string(pid));
+}
+
+void memory_subsystem::remove() noexcept {
     // See https://lists.linuxfoundation.org/pipermail/containers/2009-March/016518.html
     auto rc = ::rmdir(cgroup_path_.c_str());
     if (rc != 0 && errno != ENOENT) {
         SPDLOG_ERROR("Failed to cleanup cgroup memory subsystem; errno={} path={}",
                      errno, cgroup_path_.native());
     }
-}
-
-void memory_subsystem::apply(int pid) {
-    auto task_path = cgroup_path_ / task_filename;
-    base::write_to_file(task_path, fmt::to_string(pid));
 }
 
 } // namespace lumper::cgroups

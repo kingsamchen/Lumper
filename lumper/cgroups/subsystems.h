@@ -41,6 +41,9 @@ public:
     void apply(int pid) override;
 
 private:
+    void remove() noexcept;
+
+private:
     std::filesystem::path cgroup_path_;
     static constexpr char name[] = "memory";
 };
@@ -65,6 +68,9 @@ public:
 
     // Throws `std::filesystem::filesystem_error` when failed.
     void apply(int pid) override;
+
+private:
+    void remove() noexcept;
 
 private:
     std::filesystem::path cgroup_path_;
