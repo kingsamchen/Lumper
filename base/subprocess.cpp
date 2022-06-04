@@ -259,7 +259,7 @@ std::pair<int, detail::child_errc> subprocess::prepare_child(const options& opts
 
     if (opts.evil_pre_exec_callback_) {
         if (int rc = opts.evil_pre_exec_callback_->run(); rc != 0) {
-            return {errno, child_errc::run_pre_exec_callback};
+            return {rc, child_errc::run_pre_exec_callback};
         }
     }
 
