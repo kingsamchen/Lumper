@@ -50,6 +50,9 @@ void cli::parse(int argc, const char* argv[]) {
     parser_run.add_argument("--cpus")
             .scan<'i', int>()
             .help("enable cpu limit");
+    parser_run.add_argument("-i", "--image")
+            .help("image name")
+            .required();
     parser_run.add_argument("CMD")
             .help("executable and its arguments (optional)")
             .remaining();
