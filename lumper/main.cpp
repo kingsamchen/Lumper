@@ -15,7 +15,9 @@
 
 void initialize_logger() {
     try {
-        spdlog::set_default_logger(spdlog::basic_logger_mt("main", "/tmp/lumper.log"));
+        auto logger = spdlog::basic_logger_mt("main", "/tmp/lumper.log");
+        logger->flush_on(spdlog::level::info);
+        spdlog::set_default_logger(std::move(logger));
     } catch (const std::exception& ex) {
         fmt::print(stderr, "Cannot initialize logger: {}", ex.what());
         std::exit(1);
