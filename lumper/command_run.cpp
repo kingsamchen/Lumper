@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <string_view>
+#include <tuple>
 #include <utility>
 
 #include <sched.h>
@@ -20,8 +21,10 @@
 #include "esl/scope_guard.h"
 #include "esl/strings.h"
 #include "esl/unique_handle.h"
+#include "fmt/format.h"
 #include "fmt/ranges.h"
 #include "spdlog/spdlog.h"
+#include "uuidxx/uuidxx.h"
 
 #include "base/exception.h"
 #include "base/ignore.h"
@@ -30,6 +33,9 @@
 
 namespace lumper {
 namespace {
+
+constexpr char k_images_dir[] = "/var/lib/lumper/images";
+constexpr char k_container_dir[] = "/var/lib/lumper/containers";
 
 enum class mount_errc : std::uint32_t {
     ok = 0,
@@ -76,12 +82,17 @@ constexpr auto old_root_after_pivot(const char (&pivot_root)[N]) -> std::array<c
 
 class mount_proc_before_exec : public base::subprocess::evil_pre_exec_callback {
 public:
-    explicit mount_proc_before_exec(const std::filesystem::path& new_root)
+    mount_proc_before_exec(const std::filesystem::path& new_root, std::string mount_data)
         : new_root_(new_root),
           old_root_(new_root / k_old_root_name),
           new_proc_(new_root / "proc"),
           new_sys_(new_root / "sys"),
-          new_dev_(new_root / "dev") {
+          new_dev_(new_root / "dev"),
+          mount_data_(std::move(mount_data)) {
+        if (mount_data_.empty()) {
+            throw std::invalid_argument("empty mount_data");
+        }
+
         int fds[2]{};
         if (::pipe2(fds, O_CLOEXEC) != 0) {
             throw std::system_error(errno,
@@ -141,7 +152,10 @@ private:
     }
 
     mount_errc setup_container_root() const noexcept {
-        FORCE_AS_MEMBER_FUNCTION();
+        if (::mount("overlay", new_root_.c_str(), "overlay", MS_NODEV, mount_data_.c_str()) != 0) {
+            return mount_errc::mount_container_root;
+        }
+
         return mount_errc::ok;
     }
 
@@ -202,14 +216,53 @@ private:
     std::string new_proc_;
     std::string new_sys_;
     std::string new_dev_;
+    std::string mount_data_;
     esl::unique_fd err_pipe_rd_;
     esl::unique_fd err_pipe_wr_;
 };
 
 std::filesystem::path get_image_path(std::string_view image_name) {
-    std::filesystem::path path("/var/lib/lumper/images");
+    std::filesystem::path path(k_images_dir);
     path /= image_name;
     return path;
+}
+
+std::filesystem::path get_container_path(std::string_view container_id, std::string_view subdir) {
+    std::filesystem::path path(k_container_dir);
+    path /= container_id;
+    path /= subdir;
+    return path;
+}
+
+std::tuple<std::filesystem::path, std::string>
+create_container_root(std::string_view image_name, std::string_view container_id) {
+    auto image_root = get_image_path(image_name);
+    if (!std::filesystem::exists(image_root)) {
+        // TODO(KC): untar image first if image_root doesn't exist.
+        throw std::invalid_argument(
+                fmt::format("image root ({}) doesn't exist", image_root.string()));
+    }
+
+    // Create directories for:
+    //  - cow layer (upperdir)
+    //  - overlay workdir
+    //  - a mount point
+    auto cow_rw = get_container_path(container_id, "cow_rw");
+    auto cow_workdir = get_container_path(container_id, "cow_workdir");
+    auto rootfs = get_container_path(container_id, "rootfs");
+    for (const auto& path : {std::cref(cow_rw), std::cref(cow_workdir), std::cref(rootfs)}) {
+        if (!std::filesystem::exists(path)) {
+            std::filesystem::create_directories(path);
+        }
+    }
+
+    auto mount_data = fmt::format("lowerdir={},upperdir={},workdir={}",
+                                  image_root.native(), cow_rw.native(), cow_workdir.native());
+
+    SPDLOG_INFO("Create container root; image_root={}\ncontainer_root={}\nmount_data={}",
+                image_root.native(), rootfs.native(), mount_data);
+
+    return {rootfs, mount_data};
 }
 
 } // namespace
@@ -230,13 +283,11 @@ void process(cli::cmd_run_t) {
         opts.set_stderr(base::subprocess::use_null);
     }
 
-    auto image_path = get_image_path(parser.get<std::string>("--image"));
-    if (!std::filesystem::exists(image_path)) {
-        throw std::invalid_argument(
-                fmt::format("image path ({}) doesn't exist", image_path.string()));
-    }
+    auto&& [container_root, root_mount_data] =
+            create_container_root(parser.get<std::string>("--image"),
+                                  uuidxx::make_v4().to_string());
 
-    mount_proc_before_exec mount_proc(image_path);
+    mount_proc_before_exec mount_proc(container_root, std::move(root_mount_data));
     opts.set_evil_pre_exec_callback(&mount_proc);
 
     cgroups::resource_config res_cfg;

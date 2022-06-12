@@ -1,5 +1,6 @@
 CPMAddPackage("gh:fmtlib/fmt#8.1.1")
 CPMAddPackage("gh:kingsamchen/esl#9a1f02cbea4902ab110ce7e9457f226a2c2c3375")
+CPMAddPackage("gh:kingsamchen/uuidxx#6314dbe11f3ce593ac9236129af17cac4766d254")
 CPMAddPackage("gh:p-ranav/argparse#v2.2")
 CPMAddPackage(
   NAME spdlog
@@ -37,6 +38,7 @@ target_link_libraries(lumper
     esl
     fmt
     spdlog
+    uuidxx
 
     base
 )
