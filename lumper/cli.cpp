@@ -45,14 +45,23 @@ void cli::parse(int argc, const char* argv[]) {
             .nargs(0)
             .default_value(false)
             .implicit_value(true);
+    parser_run.add_argument("-i", "--image")
+            .help("image name")
+            .required();
     parser_run.add_argument("-m", "--memory")
             .help("enable memory limit");
     parser_run.add_argument("--cpus")
             .scan<'i', int>()
             .help("enable cpu limit");
-    parser_run.add_argument("-i", "--image")
-            .help("image name")
-            .required();
+    parser_run.add_argument("-v", "--volume")
+            .help("data volume")
+            .action([](const std::string& value) {
+                auto sp = esl::strings::split(value, ':', esl::strings::skip_empty{});
+                if (std::distance(sp.begin(), sp.end()) != 2) {
+                    throw std::invalid_argument("invalid volume parameter");
+                }
+                return value;
+            });
     parser_run.add_argument("CMD")
             .help("executable and its arguments (optional)")
             .remaining();

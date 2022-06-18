@@ -48,8 +48,16 @@ TEST_CASE("command is mandatory") {
 }
 
 TEST_CASE("command run") {
-    std::vector<const char*> args{"./lumper", "run"};
+    std::vector<const char*> args{"./lumper", "run", "-i", "image_name"};
     CAPTURE(args);
+
+    SUBCASE("flag -i is mandatory") {
+        args.erase(std::next(args.begin(), 2), args.end());
+        REQUIRE_EQ(args.size(), 2);
+        args.push_back("some_cmd");
+        cli_test_stub cli;
+        CHECK_THROWS(cli.parse(ssize(args), args.data()));
+    }
 
     SUBCASE("empty when no cmd provided") {
         cli_test_stub cli;
@@ -107,6 +115,42 @@ TEST_CASE("command run") {
             cli.parse(ssize(args), args.data());
             auto m = cli.command_parser().present("--memory");
             CHECK_FALSE(m.has_value());
+        }
+    }
+
+    SUBCASE("support cpu-limit flag") {
+        SUBCASE("specify cpu limits correctly") {
+            args.insert(args.end(), {"--cpus", "2", "some_cmd"});
+            cli_test_stub cli;
+            cli.parse(ssize(args), args.data());
+            CHECK_EQ(cli.command_parser().get<int>("--cpus"), 2);
+
+            SUBCASE("cannot read value as string") {
+                CHECK_THROWS(cli.command_parser().get("--cpus"), "2");
+            }
+        }
+
+        SUBCASE("not present when not specified") {
+            args.push_back("some_cmd");
+            cli_test_stub cli;
+            cli.parse(ssize(args), args.data());
+            auto m = cli.command_parser().present("--cpus");
+            CHECK_FALSE(m.has_value());
+        }
+    }
+
+    SUBCASE("support volume flag") {
+        SUBCASE("specify volume folder correctly") {
+            args.insert(args.end(), {"-v", "/path/in/host:/path/in/container", "some_cmd"});
+            cli_test_stub cli;
+            cli.parse(ssize(args), args.data());
+            CHECK_EQ(cli.command_parser().get("-v"), "/path/in/host:/path/in/container");
+        }
+
+        SUBCASE("incorrect volume param format") {
+            args.insert(args.end(), {"-v", "/path/in/container", "some_cmd"});
+            cli_test_stub cli;
+            CHECK_THROWS(cli.parse(ssize(args), args.data()));
         }
     }
 }
