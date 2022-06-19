@@ -64,9 +64,11 @@ int create_directories(std::string_view path) {
 
 } // namespace
 
-mount_container_before_exec::mount_container_before_exec(const std::filesystem::path& new_root,
+mount_container_before_exec::mount_container_before_exec(std::string hostname,
+                                                         const std::filesystem::path& new_root,
                                                          std::string mount_data)
-    : new_root_(new_root),
+    : hostname_(std::move(hostname)),
+      new_root_(new_root),
       old_root_(new_root / k_old_root_name),
       new_proc_(new_root / "proc"),
       new_sys_(new_root / "sys"),
@@ -118,6 +120,10 @@ void mount_container_before_exec::set_volume_dir(volume_pair volume_dir) {
 }
 
 mount_errc mount_container_before_exec::make_contained() const noexcept {
+    if (::sethostname(hostname_.data(), hostname_.size()) != 0) {
+        return mount_errc::set_hostname;
+    }
+
     // See https://man7.org/linux/man-pages/man7/mount_namespaces.7.html#NOTES
     // `MS_REC` here to apply recursively.
     if (::mount("", "/", "", MS_PRIVATE | MS_REC, "") != 0) {

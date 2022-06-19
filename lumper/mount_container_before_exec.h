@@ -32,6 +32,7 @@ enum class mount_errc : std::uint32_t {
     chdir_call,
     unmount_old_pivot,
     rmdir_old_pivot,
+    set_hostname,
     total_count
 };
 
@@ -48,6 +49,7 @@ inline const char* mount_errc_msg(mount_errc errc) noexcept {
                                          "failed to call syscall pivot_root",
                                          "failed to chdir to new root",
                                          "failed to unmount old root",
+                                         "failed to set container hostname",
                                          "failed to rmdir old root"};
     static_assert(std::size(errc_msgs) == std::size_t(mount_errc::total_count));
     auto idx = static_cast<std::underlying_type_t<mount_errc>>(errc);
@@ -58,7 +60,9 @@ class mount_container_before_exec : public base::subprocess::evil_pre_exec_callb
 public:
     using volume_pair = std::pair<std::string, std::string>;
 
-    mount_container_before_exec(const std::filesystem::path& new_root, std::string mount_data);
+    mount_container_before_exec(std::string hostname,
+                                const std::filesystem::path& new_root,
+                                std::string mount_data);
 
     int run() noexcept override;
 
@@ -77,6 +81,7 @@ private:
 
 private:
     inline static constexpr char k_old_root_name[] = ".old_root";
+    std::string hostname_;
     std::string new_root_;
     std::string old_root_;
     std::string new_proc_;

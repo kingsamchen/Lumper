@@ -34,6 +34,16 @@ namespace {
 constexpr char k_images_dir[] = "/var/lib/lumper/images";
 constexpr char k_container_dir[] = "/var/lib/lumper/containers";
 
+// Use last part of uuid-v4 as hostname.
+std::string hostname_from_contaienr_id(std::string_view id) {
+    auto pos = id.rfind('-');
+    if (pos == std::string_view::npos) {
+        throw std::invalid_argument(fmt::format("invalid container-id({})", id));
+    }
+
+    return std::string(id.substr(pos + 1));
+}
+
 std::filesystem::path get_image_path(std::string_view image_name) {
     std::filesystem::path path(k_images_dir);
     path /= image_name;
@@ -96,11 +106,13 @@ void process(cli::cmd_run_t) {
         opts.set_stderr(base::subprocess::use_null);
     }
 
+    auto container_id = uuidxx::make_v4().to_string();
     auto&& [container_root, root_mount_data] =
-            create_container_root(parser.get<std::string>("--image"),
-                                  uuidxx::make_v4().to_string());
+            create_container_root(parser.get<std::string>("--image"), container_id);
 
-    mount_container_before_exec mount_container(container_root, std::move(root_mount_data));
+    mount_container_before_exec mount_container(hostname_from_contaienr_id(container_id),
+                                                container_root,
+                                                std::move(root_mount_data));
 
     auto vol = parser.present("--volume");
     if (vol.has_value()) {
