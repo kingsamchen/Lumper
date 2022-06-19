@@ -26,6 +26,8 @@ target_sources(lumper
     command_run.cpp
     commands.h
     main.cpp
+    mount_container_before_exec.cpp
+    mount_container_before_exec.h
 )
 
 target_include_directories(lumper

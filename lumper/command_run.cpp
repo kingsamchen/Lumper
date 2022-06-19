@@ -13,14 +13,10 @@
 #include <utility>
 
 #include <sched.h>
-#include <sys/mount.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "esl/scope_guard.h"
 #include "esl/strings.h"
-#include "esl/unique_handle.h"
 #include "fmt/format.h"
 #include "fmt/ranges.h"
 #include "spdlog/spdlog.h"
@@ -30,196 +26,13 @@
 #include "base/ignore.h"
 #include "base/subprocess.h"
 #include "lumper/cgroups/cgroup_manager.h"
+#include "lumper/mount_container_before_exec.h"
 
 namespace lumper {
 namespace {
 
 constexpr char k_images_dir[] = "/var/lib/lumper/images";
 constexpr char k_container_dir[] = "/var/lib/lumper/containers";
-
-enum class mount_errc : std::uint32_t {
-    ok = 0,
-    mount_private,
-    mount_proc,
-    mount_sys,
-    mount_dev,
-    mount_as_bind,
-    mount_container_root,
-    mkdir_old_root_for_pivot,
-    syscall_pivot_root,
-    chdir_call,
-    unmount_old_pivot,
-    rmdir_old_pivot,
-    total_count
-};
-
-const char* mount_errc_msg(mount_errc errc) noexcept {
-    constexpr const char* errc_msgs[] = {"success",
-                                         "failed to mount for private namespace",
-                                         "failed to mount /proc as proc",
-                                         "failed to mount /sys as sysfs",
-                                         "failed to mount /dev as tmpfs",
-                                         "failed to mount new root as bind",
-                                         "failed to mount container root",
-                                         "failed to mkdir old root for pivot",
-                                         "failed to call syscall pivot_root",
-                                         "failed to chdir to new root",
-                                         "failed to unmount old root",
-                                         "failed to rmdir old root"};
-    static_assert(std::size(errc_msgs) == std::size_t(mount_errc::total_count));
-    auto idx = static_cast<std::underlying_type_t<mount_errc>>(errc);
-    return errc_msgs[idx];
-}
-
-template<std::size_t N>
-constexpr auto old_root_after_pivot(const char (&pivot_root)[N]) -> std::array<char, N + 1> {
-    std::array<char, N + 1> str{'/'};
-    for (std::size_t i = 0; i < N - 1; ++i) {
-        str[i + 1] = pivot_root[i];
-    }
-    return str;
-}
-
-class mount_proc_before_exec : public base::subprocess::evil_pre_exec_callback {
-public:
-    mount_proc_before_exec(const std::filesystem::path& new_root, std::string mount_data)
-        : new_root_(new_root),
-          old_root_(new_root / k_old_root_name),
-          new_proc_(new_root / "proc"),
-          new_sys_(new_root / "sys"),
-          new_dev_(new_root / "dev"),
-          mount_data_(std::move(mount_data)) {
-        if (mount_data_.empty()) {
-            throw std::invalid_argument("empty mount_data");
-        }
-
-        int fds[2]{};
-        if (::pipe2(fds, O_CLOEXEC) != 0) {
-            throw std::system_error(errno,
-                                    std::system_category(),
-                                    "failed to pipe2() for mount_proc_before_exec");
-        }
-
-        err_pipe_rd_ = esl::wrap_unique_fd(fds[0]);
-        err_pipe_wr_ = esl::wrap_unique_fd(fds[1]);
-    }
-
-    // No dynamic allocation is allowed in this function.
-    int run() noexcept override {
-        auto errc = make_contained();
-        if (errc != mount_errc::ok) {
-            auto err_value = errno;
-            ssize_t wc = 0;
-            do {
-                wc = ::write(err_pipe_wr_.get(), &errc, sizeof(errc));
-            } while (wc == -1 && errno == EINTR);
-            return err_value;
-        }
-        return 0;
-    }
-
-    mount_errc read_error() {
-        err_pipe_wr_.reset();
-        auto errc = mount_errc::ok;
-        ssize_t rc = 0;
-        do {
-            rc = ::read(err_pipe_rd_.get(), &errc, sizeof(errc));
-        } while (rc == -1 && errno == EINTR);
-        return errc;
-    }
-
-private:
-    mount_errc make_contained() noexcept {
-        // See https://man7.org/linux/man-pages/man7/mount_namespaces.7.html#NOTES
-        // `MS_REC` here to apply recursively.
-        if (::mount("", "/", "", MS_PRIVATE | MS_REC, "") != 0) {
-            return mount_errc::mount_private;
-        }
-
-        if (auto errc = setup_container_root(); errc != mount_errc::ok) {
-            return errc;
-        }
-
-        if (auto errc = create_mounts(); errc != mount_errc::ok) {
-            return errc;
-        }
-
-        if (auto errc = change_root(); errc != mount_errc::ok) {
-            return errc;
-        }
-
-        return mount_errc::ok;
-    }
-
-    mount_errc setup_container_root() const noexcept {
-        if (::mount("overlay", new_root_.c_str(), "overlay", MS_NODEV, mount_data_.c_str()) != 0) {
-            return mount_errc::mount_container_root;
-        }
-
-        return mount_errc::ok;
-    }
-
-    mount_errc create_mounts() const noexcept {
-        if (::mount("proc", new_proc_.c_str(), "proc", 0, "") != 0) {
-            return mount_errc::mount_proc;
-        }
-
-        if (::mount("sysfs", new_sys_.c_str(), "sysfs", 0, "") != 0) {
-            return mount_errc::mount_sys;
-        }
-
-        std::uint64_t dev_flags = MS_NOSUID | MS_STRICTATIME;
-        if (::mount("tmpfs", new_dev_.c_str(), "tmpfs", dev_flags, "mode=755") != 0) {
-            return mount_errc::mount_dev;
-        }
-
-        return mount_errc::ok;
-    }
-
-    mount_errc change_root() const noexcept {
-        auto new_root = new_root_.c_str();
-        if (::mount(new_root, new_root, "bind", MS_BIND | MS_REC, "") != 0) {
-            return mount_errc::mount_as_bind;
-        }
-
-        constexpr auto perm = 0777;
-        auto old_root = old_root_.c_str();
-        if (::mkdir(old_root, perm) != 0) {
-            return mount_errc::mkdir_old_root_for_pivot;
-        }
-
-        // Mount to `new_root` and old root will be attached to `pivot_dir`.
-        if (::syscall(SYS_pivot_root, new_root, old_root) != 0) {
-            return mount_errc::syscall_pivot_root;
-        }
-
-        if (::chdir("/") != 0) {
-            return mount_errc::chdir_call;
-        }
-
-        constexpr auto old_pivot_root = old_root_after_pivot(k_old_root_name);
-        if (::umount2(old_pivot_root.data(), MNT_DETACH) != 0) {
-            return mount_errc::unmount_old_pivot;
-        }
-
-        if (::rmdir(old_pivot_root.data()) != 0) {
-            return mount_errc::rmdir_old_pivot;
-        }
-
-        return mount_errc::ok;
-    }
-
-private:
-    inline static constexpr char k_old_root_name[] = ".old_root";
-    std::string new_root_;
-    std::string old_root_;
-    std::string new_proc_;
-    std::string new_sys_;
-    std::string new_dev_;
-    std::string mount_data_;
-    esl::unique_fd err_pipe_rd_;
-    esl::unique_fd err_pipe_wr_;
-};
 
 std::filesystem::path get_image_path(std::string_view image_name) {
     std::filesystem::path path(k_images_dir);
@@ -287,8 +100,23 @@ void process(cli::cmd_run_t) {
             create_container_root(parser.get<std::string>("--image"),
                                   uuidxx::make_v4().to_string());
 
-    mount_proc_before_exec mount_proc(container_root, std::move(root_mount_data));
-    opts.set_evil_pre_exec_callback(&mount_proc);
+    mount_container_before_exec mount_container(container_root, std::move(root_mount_data));
+
+    auto vol = parser.present("--volume");
+    if (vol.has_value()) {
+        auto parts = esl::strings::split(*vol, ':', esl::strings::skip_empty{})
+                             .to<std::vector<std::string_view>>();
+        assert(parts.size() == 2);
+        if (!std::filesystem::exists(parts[0])) {
+            throw std::invalid_argument(
+                    fmt::format("volume path ({}) in host doesn't exist", parts[0]));
+        }
+
+        auto container_vol = container_root / std::filesystem::path(parts[1]).relative_path();
+        mount_container.set_volume_dir({std::string(parts[0]), container_vol.native()});
+    }
+
+    opts.set_evil_pre_exec_callback(&mount_container);
 
     cgroups::resource_config res_cfg;
 
@@ -315,7 +143,7 @@ void process(cli::cmd_run_t) {
 
         cgroup_mgr.apply(proc.pid());
     } catch (const base::spawn_subprocess_error& ex) {
-        auto errc = mount_proc.read_error();
+        auto errc = mount_container.read_error();
         if (errc != mount_errc::ok) {
             SPDLOG_ERROR("Failed to run mount_proc_before_exec; reason={}", mount_errc_msg(errc));
         }
