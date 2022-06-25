@@ -93,14 +93,13 @@ create_container_root(std::string_view image_name, std::string_view container_id
 void process(cli::cmd_run_t) {
     const auto& parser = cli::for_current_process().command_parser();
 
-    auto argv = parser.present<std::vector<std::string>>("CMD");
-    if (!argv || argv->empty()) {
-        throw cli_parse_failure("No CMD provided", &parser);
-    }
-
     base::subprocess::options opts;
     opts.clone_with_flags(CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC);
-    if (!parser.get<bool>("--it")) {
+
+    // Since --detach and --it cannot be enabled both, and when they both are not enabled,
+    // we assume --it ought be enabled.
+    auto tty_enabled = !parser.get<bool>("--detach");
+    if (tty_enabled) {
         opts.set_stdin(base::subprocess::use_null);
         opts.set_stdout(base::subprocess::use_null);
         opts.set_stderr(base::subprocess::use_null);
@@ -142,15 +141,17 @@ void process(cli::cmd_run_t) {
         res_cfg.set_cpus(*cpus_limit);
     }
 
-    SPDLOG_INFO("Prepare to run cmd: {}", *argv);
+    auto argv = parser.get<std::vector<std::string>>("CMD");
+    SPDLOG_INFO("Prepare to run cmd: {}", argv);
     try {
         cgroups::cgroup_manager cgroup_mgr("lumper-cgroup", res_cfg);
 
-        base::subprocess proc(*argv, opts);
+        // TODO(KC): handle for the detach case.
+        base::subprocess proc(argv, opts);
         ESL_ON_SCOPE_EXIT {
             base::ignore_unused(proc.wait());
             // NOLINTNEXTLINE(bugprone-lambda-function-name)
-            SPDLOG_INFO("Command {} completed", esl::strings::join(*argv, " "));
+            SPDLOG_INFO("Command {} completed", esl::strings::join(argv, " "));
         };
 
         cgroup_mgr.apply(proc.pid());
@@ -161,7 +162,7 @@ void process(cli::cmd_run_t) {
         }
         throw command_run_error(ex.what());
     } catch (const std::exception& ex) {
-        SPDLOG_ERROR("Failed to run cmd in sub-process; cmd={}", *argv);
+        SPDLOG_ERROR("Failed to run cmd in sub-process; cmd={}", argv);
         throw command_run_error(ex.what());
     }
 }

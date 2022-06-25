@@ -19,6 +19,7 @@ public:
 
 namespace {
 
+using lumper::cli_parse_failure;
 using lumper::cli_test_stub;
 
 template<typename T, int N>
@@ -37,13 +38,13 @@ TEST_CASE("command is mandatory") {
     SUBCASE("throws when command missing") {
         const char* args[] = {"./lumper"};
         cli_test_stub cli;
-        CHECK_THROWS(cli.parse(ssize(args), args));
+        CHECK_THROWS_AS(cli.parse(ssize(args), args), cli_parse_failure);
     }
 
     SUBCASE("throws when unknown command") {
         const char* args[] = {"./lumper", "test"};
         cli_test_stub cli;
-        CHECK_THROWS(cli.parse(ssize(args), args));
+        CHECK_THROWS_AS(cli.parse(ssize(args), args), cli_parse_failure);
     }
 }
 
@@ -56,13 +57,12 @@ TEST_CASE("command run") {
         REQUIRE_EQ(args.size(), 2);
         args.push_back("some_cmd");
         cli_test_stub cli;
-        CHECK_THROWS(cli.parse(ssize(args), args.data()));
+        CHECK_THROWS_AS(cli.parse(ssize(args), args.data()), cli_parse_failure);
     }
 
     SUBCASE("empty when no cmd provided") {
         cli_test_stub cli;
-        cli.parse(ssize(args), args.data());
-        CHECK_THROWS(cli.command_parser().get<std::vector<std::string>>("CMD"));
+        CHECK_THROWS_AS(cli.parse(ssize(args), args.data()), cli_parse_failure);
     }
 
     SUBCASE("run executable only") {
@@ -101,6 +101,29 @@ TEST_CASE("command run") {
         }
     }
 
+    SUBCASE("support detach flag") {
+        SUBCASE("false when no specified") {
+            args.push_back("some_cmd");
+            cli_test_stub cli;
+            cli.parse(ssize(args), args.data());
+            CHECK_FALSE(cli.command_parser().get<bool>("--detach"));
+        }
+
+        SUBCASE("with being explicitly given") {
+            args.push_back("--detach");
+            args.push_back("some_cmd");
+            cli_test_stub cli;
+            cli.parse(ssize(args), args.data());
+            CHECK(cli.command_parser().get<bool>("--detach"));
+        }
+    }
+
+    SUBCASE("cannot enable both tty and detach flags") {
+        args.insert(args.end(), {"--it", "--deatch", "some_cmd"});
+        cli_test_stub cli;
+        CHECK_THROWS_AS(cli.parse(ssize(args), args.data()), cli_parse_failure);
+    }
+
     SUBCASE("support memory-limit flag") {
         SUBCASE("specify memory limits") {
             args.insert(args.end(), {"-m", "10m", "some_cmd"});
@@ -126,7 +149,7 @@ TEST_CASE("command run") {
             CHECK_EQ(cli.command_parser().get<int>("--cpus"), 2);
 
             SUBCASE("cannot read value as string") {
-                CHECK_THROWS(cli.command_parser().get("--cpus"), "2");
+                CHECK_THROWS_AS(cli.command_parser().get("--cpus"), std::bad_any_cast);
             }
         }
 
@@ -150,7 +173,7 @@ TEST_CASE("command run") {
         SUBCASE("incorrect volume param format") {
             args.insert(args.end(), {"-v", "/path/in/container", "some_cmd"});
             cli_test_stub cli;
-            CHECK_THROWS(cli.parse(ssize(args), args.data()));
+            CHECK_THROWS_AS(cli.parse(ssize(args), args.data()), cli_parse_failure);
         }
     }
 }

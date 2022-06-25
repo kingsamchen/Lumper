@@ -36,6 +36,7 @@ public:
     struct cmd_ps_t {};
     struct cmd_run_t {};
 
+    // Throws cli_parse_failure on commandline parse error.
     static void init(int argc, const char* argv[]);
 
     static const cli& for_current_process();

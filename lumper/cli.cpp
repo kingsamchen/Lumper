@@ -18,6 +18,19 @@ constexpr char k_prog_cmd[] = "COMMAND";
 constexpr char k_cmd_run[] = "run";
 constexpr char k_cmd_ps[] = "ps";
 
+void validate(cli::cmd_run_t, const argparse::ArgumentParser* parser) {
+    auto argv = parser->present<std::vector<std::string>>("CMD");
+    if (!argv || argv->empty()) {
+        throw std::invalid_argument("No CMD given!");
+    }
+
+    if (parser->get<bool>("--it") && parser->get<bool>("--detach")) {
+        throw std::invalid_argument("--it and --detach cannot both be given");
+    }
+}
+
+void validate(cli::cmd_ps_t, const argparse::ArgumentParser* parser) {}
+
 } // namespace
 
 // static
@@ -41,8 +54,11 @@ const cli& cli::for_current_process() {
 void cli::parse(int argc, const char* argv[]) {
     argparse::ArgumentParser parser_run("lumper run");
     parser_run.add_argument("--it")
-            .help("enable tty")
-            .nargs(0)
+            .help("enable interactive tty")
+            .default_value(false)
+            .implicit_value(true);
+    parser_run.add_argument("-d", "--detach")
+            .help("run container in background")
             .default_value(false)
             .implicit_value(true);
     parser_run.add_argument("-i", "--image")
@@ -95,6 +111,10 @@ void cli::parse(int argc, const char* argv[]) {
 
         cur_parser = &cur_cmd_parser_->second.parser;
         cur_parser->parse_args(prog_args);
+
+        // Validate for the chosen command.
+        std::visit([cur_parser](auto cmd) { validate(cmd, cur_parser); },
+                   cur_cmd_parser_->second.cmd);
     } catch (const std::exception& ex) {
         throw cli_parse_failure(ex.what(), cur_parser);
     }
