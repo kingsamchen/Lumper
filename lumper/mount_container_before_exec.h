@@ -26,13 +26,17 @@ enum class mount_errc : std::uint32_t {
     mount_dev,
     mount_volume,
     mount_container_root,
+    mount_dev_pts,
     mkdir_container_volume,
+    mkdir_dev_pts,
     mkdir_old_root_for_pivot,
     syscall_pivot_root,
     chdir_call,
     unmount_old_pivot,
     rmdir_old_pivot,
     set_hostname,
+    symlink_call,
+    mknod_call,
     total_count
 };
 
@@ -44,13 +48,17 @@ inline const char* mount_errc_msg(mount_errc errc) noexcept {
                                          "failed to mount /dev as tmpfs",
                                          "failed to mount volume",
                                          "failed to mount container root",
+                                         "failed to mount devpts",
                                          "failed to mkdir container volume",
+                                         "failed to mkdir dev/pts",
                                          "failed to mkdir old root for pivot",
                                          "failed to call syscall pivot_root",
                                          "failed to chdir to new root",
                                          "failed to unmount old root",
+                                         "failed to rmdir old root",
                                          "failed to set container hostname",
-                                         "failed to rmdir old root"};
+                                         "failed to call symlink for device",
+                                         "failed to call mknod for device"};
     static_assert(std::size(errc_msgs) == std::size_t(mount_errc::total_count));
     auto idx = static_cast<std::underlying_type_t<mount_errc>>(errc);
     return errc_msgs[idx];
@@ -77,6 +85,8 @@ private:
 
     mount_errc create_mounts() const noexcept;
 
+    mount_errc make_devices() const noexcept;
+
     mount_errc change_root() const noexcept;
 
 private:
@@ -87,6 +97,7 @@ private:
     std::string new_proc_;
     std::string new_sys_;
     std::string new_dev_;
+    std::string new_dev_pts_;
     std::string mount_data_;
     std::optional<volume_pair> volume_dir_;
     esl::unique_fd err_pipe_rd_;

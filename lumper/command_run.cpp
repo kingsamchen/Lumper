@@ -101,9 +101,6 @@ void process(cli::cmd_run_t) {
     auto detach_mode = parser.get<bool>("--detach");
     SPDLOG_INFO("running in detach-mode={}", detach_mode);
     if (detach_mode) {
-        opts.set_stdin(base::subprocess::use_null);
-        opts.set_stdout(base::subprocess::use_null);
-        opts.set_stderr(base::subprocess::use_null);
         opts.detach();
     }
 

@@ -14,6 +14,7 @@
 #include <sys/mount.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 #include "spdlog/spdlog.h"
@@ -62,6 +63,13 @@ int create_directories(std::string_view path) {
     return 0;
 }
 
+struct device_info {
+    const char* name;
+    mode_t type;
+    std::uint32_t major_id;
+    std::uint32_t minor_id;
+};
+
 } // namespace
 
 mount_container_before_exec::mount_container_before_exec(std::string hostname,
@@ -73,6 +81,7 @@ mount_container_before_exec::mount_container_before_exec(std::string hostname,
       new_proc_(new_root / "proc"),
       new_sys_(new_root / "sys"),
       new_dev_(new_root / "dev"),
+      new_dev_pts_(new_root / "dev" / "pts"),
       mount_data_(std::move(mount_data)) {
     if (mount_data_.empty()) {
         throw std::invalid_argument("empty mount_data");
@@ -167,6 +176,20 @@ mount_errc mount_container_before_exec::create_mounts() const noexcept {
         return mount_errc::mount_dev;
     }
 
+    {
+        if (create_directories(new_dev_pts_) != 0) {
+            return mount_errc::mkdir_dev_pts;
+        }
+
+        if (::mount("devpts", new_dev_pts_.c_str(), "devpts", 0, "") != 0) {
+            return mount_errc::mount_dev_pts;
+        }
+    }
+
+    if (auto errc = make_devices(); errc != mount_errc::ok) {
+        return errc;
+    }
+
     if (volume_dir_.has_value()) {
         const auto& [in_host, in_container] = *volume_dir_;
         if (create_directories(in_container) != 0) {
@@ -175,6 +198,59 @@ mount_errc mount_container_before_exec::create_mounts() const noexcept {
 
         if (::mount(in_host.c_str(), in_container.c_str(), "bind", MS_BIND | MS_REC, "") != 0) {
             return mount_errc::mount_volume;
+        }
+    }
+
+    return mount_errc::ok;
+}
+
+mount_errc mount_container_before_exec::make_devices() const noexcept {
+    constexpr auto dev_path_buf_size = 4096;
+    char dev_path_buf[4096] = {};
+    std::memcpy(dev_path_buf, new_dev_.data(), new_dev_.size());
+    auto dev_path_prefix_len = new_dev_.size();
+    if (new_dev_.back() != '/') {
+        dev_path_buf[dev_path_prefix_len] = '/';
+        ++dev_path_prefix_len;
+    }
+    auto const dev_path_data_ptr = &dev_path_buf[dev_path_prefix_len];
+
+    // Make standard I/O fds.
+
+    char self_fd_path[] = "/proc/self/fd/x";
+    constexpr auto full_len = std::size(self_fd_path) - 1;
+    const char* stdios[] = {"stdin", "stdout", "stderr"};
+    for (std::size_t i = 0; i < std::size(stdios); ++i) {
+        self_fd_path[full_len - 1] = static_cast<char>(static_cast<unsigned char>('0') + i);
+        std::strcpy(dev_path_data_ptr, stdios[i]);
+        if (::symlink(self_fd_path, dev_path_buf) != 0) {
+            return mount_errc::symlink_call;
+        }
+    }
+
+    self_fd_path[full_len - 2] = '\0';
+    std::strcpy(dev_path_data_ptr, "fd");
+    if (::symlink(self_fd_path, dev_path_buf) != 0) {
+        return mount_errc::symlink_call;
+    }
+
+    // Make extra special devices.
+
+    device_info special_devices[] = {
+            device_info{"null", S_IFCHR, 1, 3},
+            device_info{"zero", S_IFCHR, 1, 5},
+            device_info{"random", S_IFCHR, 1, 8},
+            device_info{"urandom", S_IFCHR, 1, 9},
+            device_info{"console", S_IFCHR, 136, 1}, // NOLINT(readability-magic-numbers)
+            device_info{"tty", S_IFCHR, 5, 0},
+            device_info{"full", S_IFCHR, 1, 7}};
+
+    for (const auto& dev : special_devices) {
+        std::strcpy(dev_path_data_ptr, dev.name);
+        auto dev_num = ::makedev(dev.major_id, dev.minor_id);
+        constexpr mode_t perm = 0666;
+        if (::mknod(dev_path_buf, dev.type | perm, dev_num) != 0) {
+            return mount_errc::mknod_call;
         }
     }
 
