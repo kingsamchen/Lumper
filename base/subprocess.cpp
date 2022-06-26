@@ -40,8 +40,9 @@ std::string stringify_child_error_info(const char* exe, child_error_info info) {
     constexpr const char* errc_msgs[] = {"success",
                                          "failed to prepare stdio fd",
                                          "failed to run pre-exec callback",
-                                         "failed to call exec"};
-    assert(0 <= info.err_code && info.err_code < std::size(errc_msgs));
+                                         "failed to call exec",
+                                         "failed to clone for detached"};
+    static_assert(std::size_t(child_errc::total_count) == std::size(errc_msgs));
     return fmt::format("cannot spawn {}: {}; errno={}",
                        exe, errc_msgs[info.err_code], info.errno_value);
 }
@@ -185,6 +186,10 @@ void subprocess::spawn(std::unique_ptr<const char*[]> argvp, options& opts) {
     // data will be sent, and read in parent will block.
     err_pipe_wr.reset();
     read_child_error_pipe(err_pipe_rd.get(), argvp[0]);
+
+    if (opts.detach_) {
+        base::ignore_unused(wait());
+    }
 }
 
 void subprocess::spawn_impl(const char* argvp[], const options& opts, int err_fd) {
@@ -198,6 +203,18 @@ void subprocess::spawn_impl(const char* argvp[], const options& opts, int err_fd
     // dynamic memory, acquire lock, throw exception etc. Be careful about what you are
     // going to do.
     if (pid == 0) {
+        if (opts.detach_) {
+            // Clone twice if detach was requested; and exit intermediate child process
+            // immediately after success of clone.
+            // The grand-parent process still has the pid of the intermediate child process.
+            pid = static_cast<pid_t>(::syscall(SYS_clone, clone_flags, 0, nullptr, nullptr));
+            if (pid == -1) {
+                notify_child_error(err_fd, child_errc::detach_clone_failure, errno);
+            } else if (pid != 0) {
+                _exit(0);
+            }
+        }
+
         auto [rc, errc] = prepare_child(opts);
         if (rc != 0) {
             notify_child_error(err_fd, errc, rc);

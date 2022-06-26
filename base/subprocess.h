@@ -26,7 +26,9 @@ enum class child_errc : std::int32_t {
     success = 0,
     prepare_stdio,
     run_pre_exec_callback,
-    exec_call_failure
+    exec_call_failure,
+    detach_clone_failure,
+    total_count,
 };
 
 } // namespace detail
@@ -128,6 +130,11 @@ public:
             return *this;
         }
 
+        options& detach() noexcept {
+            detach_ = true;
+            return *this;
+        }
+
         options& set_stdin(use_null_t::tag) {
             action_table_[STDIN_FILENO] = use_null_t{use_null_t::mode::in};
             return *this;
@@ -166,6 +173,7 @@ public:
     private:
         using stdio_action = std::variant<use_null_t, use_pipe_t>;
         std::uint64_t clone_flags_{};
+        bool detach_{false};
         // TODO(KC): can replace with flatmap or ordered vector.
         std::map<int, stdio_action> action_table_;
         evil_pre_exec_callback* evil_pre_exec_callback_{nullptr};

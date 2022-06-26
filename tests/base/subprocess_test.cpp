@@ -194,13 +194,11 @@ TEST_CASE("redirect stdio to /dev/null") {
 
 TEST_CASE("failure during constructing") {
     SUBCASE("argv is empty") {
-        // NOLINTNEXTLINE(readability-else-after-return)
         CHECK_THROWS_AS({ base::subprocess proc(std::vector<std::string>{}); },
                         std::invalid_argument);
     }
 
     SUBCASE("failed to exec child process") {
-        // NOLINTNEXTLINE(readability-else-after-return)
         CHECK_THROWS_AS({ base::subprocess proc({"/no/such/file"}); },
                         base::spawn_subprocess_error);
     }
@@ -222,7 +220,6 @@ TEST_CASE("pre exec evil callback") {
 TEST_CASE("pre exec evil callback failed") {
     einval_fail_before_exec ecb;
     auto opts = base::subprocess::options().set_evil_pre_exec_callback(&ecb);
-    // NOLINTNEXTLINE(readability-else-after-return)
     CHECK_THROWS_AS({ base::subprocess proc({"/bin/true"}, opts); },
                     base::spawn_subprocess_error);
 }
@@ -296,6 +293,25 @@ TEST_CASE("move assign to a subprocess") {
         CHECK_FALSE(orig_proc.waitable()); // NOLINT(bugprone-use-after-move)
 
         base::ignore_unused(new_proc.wait());
+    }
+}
+
+TEST_CASE("detach subprocess") {
+    SUBCASE("parent process can destruct before detached subprocess terminates") {
+        auto t1 = std::chrono::steady_clock::now();
+        {
+            base::subprocess new_proc({"/bin/sleep", "10"}, base::subprocess::options().detach());
+            CHECK_FALSE(new_proc.waitable());
+            CHECK_EQ(new_proc.pid(), -1);
+        }
+        auto t2 = std::chrono::steady_clock::now();
+        CHECK_LE(t2 - t1, std::chrono::seconds(5));
+    }
+
+    SUBCASE("notify parent process when detached process exec failed") {
+        CHECK_THROWS_AS({ base::subprocess new_proc({"/no/such/file"},
+                                                    base::subprocess::options().detach()); },
+                        base::spawn_subprocess_error);
     }
 }
 
