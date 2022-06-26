@@ -98,11 +98,13 @@ void process(cli::cmd_run_t) {
 
     // Since --detach and --it cannot be enabled both, and when they both are not enabled,
     // we assume --it ought be enabled.
-    auto tty_enabled = !parser.get<bool>("--detach");
-    if (tty_enabled) {
+    auto detach_mode = parser.get<bool>("--detach");
+    SPDLOG_INFO("running in detach-mode={}", detach_mode);
+    if (detach_mode) {
         opts.set_stdin(base::subprocess::use_null);
         opts.set_stdout(base::subprocess::use_null);
         opts.set_stderr(base::subprocess::use_null);
+        opts.detach();
     }
 
     auto container_id = uuidxx::make_v4().to_string();
@@ -146,10 +148,11 @@ void process(cli::cmd_run_t) {
     try {
         cgroups::cgroup_manager cgroup_mgr("lumper-cgroup", res_cfg);
 
-        // TODO(KC): handle for the detach case.
         base::subprocess proc(argv, opts);
         ESL_ON_SCOPE_EXIT {
-            base::ignore_unused(proc.wait());
+            if (!detach_mode) {
+                base::ignore_unused(proc.wait());
+            }
             // NOLINTNEXTLINE(bugprone-lambda-function-name)
             SPDLOG_INFO("Command {} completed", esl::strings::join(argv, " "));
         };
