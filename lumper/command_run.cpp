@@ -5,6 +5,7 @@
 #include "lumper/commands.h"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -17,6 +18,7 @@
 
 #include "esl/scope_guard.h"
 #include "esl/strings.h"
+#include "fmt/chrono.h"
 #include "fmt/format.h"
 #include "fmt/ranges.h"
 #include "spdlog/spdlog.h"
@@ -26,13 +28,12 @@
 #include "base/ignore.h"
 #include "base/subprocess.h"
 #include "lumper/cgroups/cgroup_manager.h"
+#include "lumper/container_info.h"
 #include "lumper/mount_container_before_exec.h"
+#include "lumper/path_constants.h"
 
 namespace lumper {
 namespace {
-
-constexpr char k_images_dir[] = "/var/lib/lumper/images";
-constexpr char k_container_dir[] = "/var/lib/lumper/containers";
 
 // Use last part of uuid-v4 as hostname.
 std::string hostname_from_contaienr_id(std::string_view id) {
@@ -88,6 +89,11 @@ create_container_root(std::string_view image_name, std::string_view container_id
     return {rootfs, mount_data};
 }
 
+inline std::string time_point_to_str(const std::chrono::system_clock::time_point& tp) {
+    auto time = std::chrono::system_clock::to_time_t(tp);
+    return fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(time));
+}
+
 } // namespace
 
 void process(cli::cmd_run_t) {
@@ -105,8 +111,8 @@ void process(cli::cmd_run_t) {
     }
 
     auto container_id = uuidxx::make_v4().to_string();
-    auto&& [container_root, root_mount_data] =
-            create_container_root(parser.get<std::string>("--image"), container_id);
+    auto image_name = parser.get<std::string>("--image");
+    auto&& [container_root, root_mount_data] = create_container_root(image_name, container_id);
 
     mount_container_before_exec mount_container(hostname_from_contaienr_id(container_id),
                                                 container_root,
@@ -148,6 +154,7 @@ void process(cli::cmd_run_t) {
         base::subprocess proc(argv, opts);
         ESL_ON_SCOPE_EXIT {
             if (!detach_mode) {
+                // TODO(KC): handle exception following.
                 base::ignore_unused(proc.wait());
             }
             // NOLINTNEXTLINE(bugprone-lambda-function-name)
@@ -155,6 +162,14 @@ void process(cli::cmd_run_t) {
         };
 
         cgroup_mgr.apply(proc.pid());
+
+        auto info = container_info{container_id,
+                                   image_name,
+                                   esl::strings::join(argv, " "),
+                                   time_point_to_str(std::chrono::system_clock::now()),
+                                   k_container_status_running,
+                                   proc.pid()};
+        save_container_info(info);
     } catch (const base::spawn_subprocess_error& ex) {
         auto errc = mount_container.read_error();
         if (errc != mount_errc::ok) {

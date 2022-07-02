@@ -2,6 +2,8 @@
 // Kingsley Chen <kingsamchen at gmail dot com>
 //
 
+#pragma once
+
 #ifndef LUMPER_MOUNT_CONTAINER_BEFORE_EXEC_H_
 #define LUMPER_MOUNT_CONTAINER_BEFORE_EXEC_H_
 

@@ -8,6 +8,11 @@ CPMAddPackage(
   GIT_TAG v1.10.0
   OPTIONS "SPDLOG_FMT_EXTERNAL ON" "SPDLOG_PREVENT_CHILD_FD ON"
 )
+CPMAddPackage(
+  NAME nlohmann_json
+  URL "https://github.com/nlohmann/json/releases/download/v3.10.5/json.tar.xz"
+  OPTIONS "JSON_BuildTests OFF" "JSON_MultipleHeaders ON"
+)
 
 add_executable(lumper)
 
@@ -25,9 +30,12 @@ target_sources(lumper
     command_ps.cpp
     command_run.cpp
     commands.h
+    container_info.cpp
+    container_info.h
     main.cpp
     mount_container_before_exec.cpp
     mount_container_before_exec.h
+    path_constants.h
 )
 
 target_include_directories(lumper
@@ -39,6 +47,7 @@ target_link_libraries(lumper
     argparse
     esl
     fmt
+    nlohmann_json::nlohmann_json
     spdlog
     uuidxx
 
