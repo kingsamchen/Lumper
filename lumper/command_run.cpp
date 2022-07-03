@@ -35,14 +35,10 @@
 namespace lumper {
 namespace {
 
-// Use last part of uuid-v4 as hostname.
-std::string hostname_from_contaienr_id(std::string_view id) {
-    auto pos = id.rfind('-');
-    if (pos == std::string_view::npos) {
-        throw std::invalid_argument(fmt::format("invalid container-id({})", id));
-    }
-
-    return std::string(id.substr(pos + 1));
+// Use last part of uuid-v4 as container-id.
+inline std::string generate_container_id() {
+    auto uuid = uuidxx::make_v4().to_string();
+    return uuid.substr(uuid.rfind('-') + 1);
 }
 
 std::filesystem::path get_image_path(std::string_view image_name) {
@@ -58,13 +54,24 @@ std::filesystem::path get_container_path(std::string_view container_id, std::str
     return path;
 }
 
-std::tuple<std::filesystem::path, std::string>
-create_container_root(std::string_view image_name, std::string_view container_id) {
+std::tuple<std::string, std::filesystem::path, std::string>
+create_container_root(std::string_view image_name) {
     auto image_root = get_image_path(image_name);
     if (!std::filesystem::exists(image_root)) {
         // TODO(KC): untar image first if image_root doesn't exist.
         throw std::invalid_argument(
                 fmt::format("image root ({}) doesn't exist", image_root.string()));
+    }
+
+    std::string container_id;
+    while (true) {
+        container_id = generate_container_id();
+        auto created = std::filesystem::create_directory(get_container_path(container_id, ""));
+        if (created) {
+            SPDLOG_INFO("Successfully chosed container-id={}", container_id);
+            break;
+        }
+        SPDLOG_WARN("Generated container-id({}) already in use, try another one", container_id);
     }
 
     // Create directories for:
@@ -86,7 +93,7 @@ create_container_root(std::string_view image_name, std::string_view container_id
     SPDLOG_INFO("Create container root; image_root={}\ncontainer_root={}\nmount_data={}",
                 image_root.native(), rootfs.native(), mount_data);
 
-    return {rootfs, mount_data};
+    return {container_id, rootfs, mount_data};
 }
 
 inline std::string time_point_to_str(const std::chrono::system_clock::time_point& tp) {
@@ -110,11 +117,10 @@ void process(cli::cmd_run_t) {
         opts.detach();
     }
 
-    auto container_id = uuidxx::make_v4().to_string();
     auto image_name = parser.get<std::string>("--image");
-    auto&& [container_root, root_mount_data] = create_container_root(image_name, container_id);
+    auto&& [container_id, container_root, root_mount_data] = create_container_root(image_name);
 
-    mount_container_before_exec mount_container(hostname_from_contaienr_id(container_id),
+    mount_container_before_exec mount_container(container_id,
                                                 container_root,
                                                 std::move(root_mount_data));
 
