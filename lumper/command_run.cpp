@@ -156,25 +156,32 @@ void process(cli::cmd_run_t) {
     SPDLOG_INFO("Prepare to run cmd: {}", argv);
     try {
         cgroups::cgroup_manager cgroup_mgr("lumper-cgroup", res_cfg);
-
         base::subprocess proc(argv, opts);
+        container_info info;
         ESL_ON_SCOPE_EXIT {
             if (!detach_mode) {
-                // TODO(KC): handle exception following.
-                base::ignore_unused(proc.wait());
+                try {
+                    base::ignore_unused(proc.wait());
+                    info.status = k_container_status_stopped;
+                    save_container_info(info);
+                } catch (const std::exception& ex) {
+                    // NOLINTNEXTLINE(bugprone-lambda-function-name)
+                    SPDLOG_ERROR("Unexpected failure during waiting container to exit; "
+                                 "ex={} container_id={}",
+                                 ex.what(), info.id);
+                }
             }
             // NOLINTNEXTLINE(bugprone-lambda-function-name)
             SPDLOG_INFO("Command {} completed", esl::strings::join(argv, " "));
         };
 
         cgroup_mgr.apply(proc.pid());
-
-        auto info = container_info{container_id,
-                                   image_name,
-                                   esl::strings::join(argv, " "),
-                                   time_point_to_str(std::chrono::system_clock::now()),
-                                   k_container_status_running,
-                                   proc.pid()};
+        info = container_info{container_id,
+                              image_name,
+                              esl::strings::join(argv, " "),
+                              time_point_to_str(std::chrono::system_clock::now()),
+                              k_container_status_running,
+                              proc.pid()};
         save_container_info(info);
     } catch (const base::spawn_subprocess_error& ex) {
         auto errc = mount_container.read_error();
