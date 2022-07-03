@@ -130,7 +130,7 @@ void process(cli::cmd_run_t) {
                              .to<std::vector<std::string_view>>();
         assert(parts.size() == 2);
         if (!std::filesystem::exists(parts[0])) {
-            throw std::invalid_argument(
+            throw command_run_error(
                     fmt::format("volume path ({}) in host doesn't exist", parts[0]));
         }
 
