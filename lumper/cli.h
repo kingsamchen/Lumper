@@ -34,6 +34,7 @@ private:
 class cli {
 public:
     struct cmd_ps_t {};
+    struct cmd_rm_t {};
     struct cmd_run_t {};
 
     // Throws cli_parse_failure on commandline parse error.
@@ -61,7 +62,7 @@ private:
     void parse(int argc, const char* argv[]);
 
 private:
-    using cmd_type = std::variant<cmd_ps_t, cmd_run_t>;
+    using cmd_type = std::variant<cmd_ps_t, cmd_rm_t, cmd_run_t>;
 
     struct cmd_parser {
         cmd_type cmd;

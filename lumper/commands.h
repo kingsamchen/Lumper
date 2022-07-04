@@ -21,6 +21,8 @@ void process(cli::cmd_run_t);
 
 void process(cli::cmd_ps_t);
 
+void process(cli::cmd_rm_t);
+
 } // namespace lumper
 
 #endif // LUMPER_COMMANDS_H_

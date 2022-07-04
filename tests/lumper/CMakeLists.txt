@@ -1,3 +1,4 @@
+CPMAddPackage("gh:kingsamchen/uuidxx#6314dbe11f3ce593ac9236129af17cac4766d254")
 CPMAddPackage("gh:p-ranav/argparse#v2.2")
 
 add_executable(lumper_test)
@@ -22,6 +23,7 @@ target_link_libraries(lumper_test
     doctest
     esl
     fmt
+    uuidxx
 )
 
 lumper_apply_common_compile_options(lumper_test)

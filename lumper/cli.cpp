@@ -17,8 +17,9 @@ namespace {
 constexpr char k_prog_cmd[] = "COMMAND";
 constexpr char k_cmd_run[] = "run";
 constexpr char k_cmd_ps[] = "ps";
+constexpr char k_cmd_rm[] = "rm";
 
-void validate(cli::cmd_run_t, const argparse::ArgumentParser* parser) {
+inline void validate(cli::cmd_run_t, const argparse::ArgumentParser* parser) {
     auto argv = parser->present<std::vector<std::string>>("CMD");
     if (!argv || argv->empty()) {
         throw std::invalid_argument("No CMD given!");
@@ -29,7 +30,9 @@ void validate(cli::cmd_run_t, const argparse::ArgumentParser* parser) {
     }
 }
 
-void validate(cli::cmd_ps_t, const argparse::ArgumentParser* parser) {}
+inline void validate(cli::cmd_ps_t, const argparse::ArgumentParser* parser) {}
+
+inline void validate(cli::cmd_rm_t, const argparse::ArgumentParser* parser) {}
 
 } // namespace
 
@@ -90,6 +93,12 @@ void cli::parse(int argc, const char* argv[]) {
             .default_value(false)
             .implicit_value(true);
     cmd_parser_table_.emplace(k_cmd_ps, cmd_parser{cmd_ps_t{}, std::move(parser_ps)});
+
+    argparse::ArgumentParser parser_rm("lumper rm");
+    parser_rm.add_argument("container_id")
+             .help("container id")
+             .required();
+    cmd_parser_table_.emplace(k_cmd_rm, cmd_parser{cmd_rm_t{}, std::move(parser_rm)});
 
     prog_.add_argument(k_prog_cmd)
             .remaining()

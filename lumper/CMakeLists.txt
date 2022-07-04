@@ -18,8 +18,6 @@ add_executable(lumper)
 
 target_sources(lumper
   PRIVATE
-    cli.cpp
-    cli.h
     cgroups/cgroup_manager.cpp
     cgroups/cgroup_manager.h
     cgroups/cpu_subsystem.cpp
@@ -27,7 +25,10 @@ target_sources(lumper
     cgroups/subsystems.h
     cgroups/util.cpp
     cgroups/util.h
+    cli.cpp
+    cli.h
     command_ps.cpp
+    command_rm.cpp
     command_run.cpp
     commands.h
     container_info.cpp

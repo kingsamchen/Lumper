@@ -4,6 +4,10 @@
 
 #include "doctest/doctest.h"
 
+#include <type_traits>
+
+#include "uuidxx/uuidxx.h"
+
 #include "lumper/cli.h"
 
 #include "tests/stringification.h"
@@ -202,6 +206,24 @@ TEST_CASE("command ps") {
         cli.parse(ssize(args), args.data());
         CHECK_EQ(cli.command_name(), "ps");
         CHECK(cli.command_parser().get<bool>("--all"));
+    }
+}
+
+TEST_CASE("command rm") {
+    std::vector<const char*> args{"./lumper", "rm"};
+
+    SUBCASE("container id is mandatory") {
+        cli_test_stub cli;
+        CHECK_THROWS_AS(cli.parse(ssize(args), args.data()), cli_parse_failure);
+    }
+
+    SUBCASE("get container id") {
+        cli_test_stub cli;
+        auto fake_container_id = uuidxx::make_v4().to_string();
+        args.push_back(fake_container_id.c_str());
+        cli.parse(ssize(args), args.data());
+        CHECK_EQ(cli.command_name(), "rm");
+        CHECK_EQ(cli.command_parser().get("container_id"), fake_container_id);
     }
 }
 
