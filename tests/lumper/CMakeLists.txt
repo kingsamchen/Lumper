@@ -1,5 +1,5 @@
 CPMAddPackage("gh:kingsamchen/uuidxx#6314dbe11f3ce593ac9236129af17cac4766d254")
-CPMAddPackage("gh:p-ranav/argparse#v2.2")
+CPMAddPackage("gh:p-ranav/argparse#v2.6")
 
 add_executable(lumper_test)
 

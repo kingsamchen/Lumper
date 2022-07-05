@@ -95,9 +95,9 @@ void cli::parse(int argc, const char* argv[]) {
     cmd_parser_table_.emplace(k_cmd_ps, cmd_parser{cmd_ps_t{}, std::move(parser_ps)});
 
     argparse::ArgumentParser parser_rm("lumper rm");
-    parser_rm.add_argument("container_id")
-             .help("container id")
-             .required();
+    parser_rm.add_argument("container_ids")
+             .help("a list of container id, at least one required")
+             .nargs(argparse::nargs_pattern::at_least_one);
     cmd_parser_table_.emplace(k_cmd_rm, cmd_parser{cmd_rm_t{}, std::move(parser_rm)});
 
     prog_.add_argument(k_prog_cmd)
