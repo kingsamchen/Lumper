@@ -18,6 +18,7 @@
 #include "esl/strings.h"
 #include "fmt/core.h"
 
+#include "base/file_util.h"
 #include "base/ignore.h"
 #include "base/subprocess.h"
 
@@ -190,6 +191,40 @@ TEST_CASE("redirect stdio to /dev/null") {
     auto cause = proc.wait().cause();
     CHECK_EQ(cause.first, base::process_exit_code::reason::exited);
     CHECK_EQ(cause.second, 0);
+}
+
+TEST_CASE("redirect stdout to file") {
+    auto ts = std::chrono::system_clock::now().time_since_epoch().count();
+    auto filename = fmt::format("/tmp/test_subprocess_redirect_stdout_to_file_{}.txt", ts);
+    constexpr int perm = 0666;
+    esl::unique_fd fd(::open(filename.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC, perm));
+    REQUIRE(static_cast<bool>(fd));
+
+    constexpr char msg[] = "This is a test text";
+    base::subprocess::options opts;
+    opts.set_stdout(base::subprocess::use_fd, fd.get());
+    base::subprocess proc({"/bin/echo", "-n", msg}, opts);
+    CHECK(proc.wait().exited());
+
+    auto data = base::read_file_to_string(fs::path(filename));
+    CHECK_EQ(data, msg);
+}
+
+TEST_CASE("redirect stderr to file") {
+    auto ts = std::chrono::system_clock::now().time_since_epoch().count();
+    auto filename = fmt::format("/tmp/test_subprocess_redirect_stderr_to_file_{}.txt", ts);
+    constexpr int perm = 0666;
+    esl::unique_fd fd(::open(filename.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC, perm));
+    REQUIRE(static_cast<bool>(fd));
+
+    constexpr char msg[] = "This is a test text";
+    base::subprocess::options opts;
+    opts.set_stderr(base::subprocess::use_fd, fd.get());
+    base::subprocess proc({"/usr/bin/sh", "-c", fmt::format("echo -n '{}' >&2", msg)}, opts);
+    CHECK(proc.wait().exited());
+
+    auto data = base::read_file_to_string(fs::path(filename));
+    CHECK_EQ(data, msg);
 }
 
 TEST_CASE("failure during constructing") {

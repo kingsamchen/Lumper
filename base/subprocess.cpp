@@ -304,6 +304,11 @@ int subprocess::handle_stdio_action(int stdio_fd, const use_null_t& action) noex
     return rc != -1 ? 0 : errno;
 }
 
+// static
+int subprocess::handle_stdio_action(int stdio_fd, const use_fd_t& action) noexcept {
+    return ::dup2(action.fd, stdio_fd) != -1 ? 0 : errno;
+}
+
 process_exit_code subprocess::wait() {
     if (!waitable()) {
         throw std::invalid_argument("subprocess is not waitable");

@@ -104,9 +104,16 @@ private:
         int pfd{};
     };
 
+    struct use_fd_t {
+        struct tag {};
+
+        int fd{};
+    };
+
 public:
     static constexpr use_null_t::tag use_null;
     static constexpr use_pipe_t::tag use_pipe;
+    static constexpr use_fd_t::tag use_fd;
 
     struct evil_pre_exec_callback { // NOLINT(cppcoreguidelines-special-member-functions)
         virtual ~evil_pre_exec_callback() = default;
@@ -165,13 +172,28 @@ public:
             return *this;
         }
 
+        options& set_stdin(use_fd_t::tag, int fd) {
+            action_table_[STDIN_FILENO] = use_fd_t{fd};
+            return *this;
+        }
+
+        options& set_stdout(use_fd_t::tag, int fd) {
+            action_table_[STDOUT_FILENO] = use_fd_t{fd};
+            return *this;
+        }
+
+        options& set_stderr(use_fd_t::tag, int fd) {
+            action_table_[STDERR_FILENO] = use_fd_t{fd};
+            return *this;
+        }
+
         options& set_evil_pre_exec_callback(evil_pre_exec_callback* cb) {
             evil_pre_exec_callback_ = cb;
             return *this;
         }
 
     private:
-        using stdio_action = std::variant<use_null_t, use_pipe_t>;
+        using stdio_action = std::variant<use_null_t, use_pipe_t, use_fd_t>;
         std::uint64_t clone_flags_{};
         bool detach_{false};
         // TODO(KC): can replace with flatmap or ordered vector.
@@ -263,6 +285,8 @@ private:
     static int handle_stdio_action(int stdio_fd, const use_null_t& action) noexcept;
 
     static int handle_stdio_action(int stdio_fd, const use_pipe_t& action) noexcept;
+
+    static int handle_stdio_action(int stdio_fd, const use_fd_t& action) noexcept;
 
 private:
     state child_state_{state::not_started};
