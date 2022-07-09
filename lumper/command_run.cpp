@@ -101,10 +101,25 @@ inline std::string time_point_to_str(const std::chrono::system_clock::time_point
     return fmt::format("{:%Y-%m-%d %H:%M:%S}", fmt::localtime(time));
 }
 
+esl::unique_fd create_file(const std::string& path) {
+    constexpr int perm = 0666;
+    int fd = ::open(path.c_str(), O_CREAT | O_WRONLY | O_CLOEXEC, perm);
+    if (fd == -1) {
+        std::string what("create file failure: ");
+        what += path;
+        throw std::system_error(errno, std::system_category(), what);
+    }
+
+    return esl::wrap_unique_fd(fd);
+}
+
 } // namespace
 
 void process(cli::cmd_run_t) {
     const auto& parser = cli::for_current_process().command_parser();
+
+    auto image_name = parser.get<std::string>("--image");
+    auto&& [container_id, container_root, root_mount_data] = create_container_root(image_name);
 
     base::subprocess::options opts;
     opts.clone_with_flags(CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC);
@@ -113,12 +128,14 @@ void process(cli::cmd_run_t) {
     // we assume --it ought be enabled.
     auto detach_mode = parser.get<bool>("--detach");
     SPDLOG_INFO("running in detach-mode={}", detach_mode);
+    esl::unique_fd logfile_fd;
     if (detach_mode) {
+        auto logfile = get_container_path(container_id, k_container_log_filename);
+        logfile_fd = create_file(logfile.native());
+        opts.set_stdout(base::subprocess::use_fd, logfile_fd.get());
+        opts.set_stderr(base::subprocess::use_fd, logfile_fd.get());
         opts.detach();
     }
-
-    auto image_name = parser.get<std::string>("--image");
-    auto&& [container_id, container_root, root_mount_data] = create_container_root(image_name);
 
     mount_container_before_exec mount_container(container_id,
                                                 container_root,
